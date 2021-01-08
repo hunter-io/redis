@@ -10,6 +10,10 @@ import (
 	"github.com/go-redis/redis/v8/internal/proto"
 )
 
+// CustomErrorsToRetry is a function that can be set up to define custom errors
+// for which retries should be performed.
+var CustomErrorsToRetry = func(err error) bool { return false }
+
 var ErrClosed = pool.ErrClosed
 
 type Error interface {
@@ -53,6 +57,10 @@ func shouldRetry(err error, retryTimeout bool) bool {
 		return true
 	}
 	if strings.HasPrefix(s, "TRYAGAIN ") {
+		return true
+	}
+
+	if CustomErrorsToRetry(err) {
 		return true
 	}
 
