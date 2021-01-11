@@ -820,14 +820,14 @@ var _ = Describe("ClusterClient", func() {
 
 			client.AddHook(&hook{
 				beforeProcessPipeline: func(ctx context.Context, cmds []redis.Cmder) (context.Context, error) {
-					Expect(cmds).To(HaveLen(1))
-					Expect(cmds[0].String()).To(Equal("ping: "))
+					Expect(cmds).To(HaveLen(3))
+					Expect(cmds[1].String()).To(Equal("ping: "))
 					stack = append(stack, "cluster.BeforeProcessPipeline")
 					return ctx, nil
 				},
 				afterProcessPipeline: func(ctx context.Context, cmds []redis.Cmder) error {
-					Expect(cmds).To(HaveLen(1))
-					Expect(cmds[0].String()).To(Equal("ping: PONG"))
+					Expect(cmds).To(HaveLen(3))
+					Expect(cmds[1].String()).To(Equal("ping: PONG"))
 					stack = append(stack, "cluster.AfterProcessPipeline")
 					return nil
 				},
@@ -991,6 +991,66 @@ var _ = Describe("ClusterClient", func() {
 					End:   16383,
 					Nodes: []redis.ClusterNode{{
 						Addr: ":" + ringShard3Port,
+					}},
+				}}
+				return slots, nil
+			}
+			client = cluster.newClusterClient(ctx, opt)
+
+			err := client.ForEachMaster(ctx, func(ctx context.Context, master *redis.Client) error {
+				return master.FlushDB(ctx).Err()
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			err = client.ForEachSlave(ctx, func(ctx context.Context, slave *redis.Client) error {
+				Eventually(func() int64 {
+					return client.DBSize(ctx).Val()
+				}, 30*time.Second).Should(Equal(int64(0)))
+				return nil
+			})
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		AfterEach(func() {
+			failover = false
+
+			err := client.Close()
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		assertClusterClient()
+	})
+
+	Describe("ClusterClient with ClusterSlots with multiple nodes per slot", func() {
+		BeforeEach(func() {
+			failover = true
+
+			opt = redisClusterOptions()
+			opt.ReadOnly = true
+			opt.ClusterSlots = func(ctx context.Context) ([]redis.ClusterSlot, error) {
+				slots := []redis.ClusterSlot{{
+					Start: 0,
+					End:   4999,
+					Nodes: []redis.ClusterNode{{
+						Addr: ":8220",
+					}, {
+						Addr: ":8223",
+					}},
+				}, {
+					Start: 5000,
+					End:   9999,
+					Nodes: []redis.ClusterNode{{
+						Addr: ":8221",
+					}, {
+						Addr: ":8224",
+					}},
+				}, {
+					Start: 10000,
+					End:   16383,
+					Nodes: []redis.ClusterNode{{
+						Addr: ":8222",
+					}, {
+						Addr: ":8225",
 					}},
 				}}
 				return slots, nil
